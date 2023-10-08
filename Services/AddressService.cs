@@ -1,20 +1,21 @@
 ﻿using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
-using bc_schools_api.Domain.Entities;
 using bc_schools_api.Services.Interfaces;
 using RestSharp;
-using bc_schools_api.Domain.Models;
 using AutoMapper;
+using bc_schools_api.Infra.Interfaces;
+using bc_schools_api.Domain.Models.Entities;
+using bc_schools_api.Domain.Models.Response;
 
 namespace bc_schools_api.Services
 {
     public class AddressService : IAddressService
     {
-        private readonly IConfiguration _configuration;
+        private readonly ISettings _settings;
         private readonly IMapper _mapper;
-        public AddressService(IConfiguration configuration, IMapper mapper)
+        public AddressService(ISettings settings, IMapper mapper)
         {
-            _configuration = configuration;
+            _settings = settings;
             _mapper = mapper;
         }
 
@@ -22,7 +23,7 @@ namespace bc_schools_api.Services
         {
             try
             {
-                var client = new RestRequest(_configuration["ProjectSettings:UrlSuggestAddressApi"], Method.Get)
+                var client = new RestRequest(_settings.UrlSuggestAddressApi, Method.Get)
                 {
                     RequestFormat = DataFormat.Json
                 };
@@ -30,7 +31,7 @@ namespace bc_schools_api.Services
                 client.AddParameter("query", address, ParameterType.QueryString);
                 client.AddParameter("userLocation", "-30.08,-51.21", ParameterType.QueryString);
                 client.AddParameter("includeEntityTypes", "Address", ParameterType.QueryString);
-                client.AddParameter("key", _configuration["ProjectSettings:LocalizationApiKey"], ParameterType.QueryString);
+                client.AddParameter("key", _settings.LocalizationApiKey, ParameterType.QueryString);
 
                 RestClient _rest = new();
                 var response = await _rest.ExecuteAsync<JObject>(client);
@@ -56,14 +57,14 @@ namespace bc_schools_api.Services
         {
             try
             {
-                var client = new RestRequest(_configuration["ProjectSettings:UrlLocationsApi"], Method.Get)
+                var client = new RestRequest(_settings.UrlLocationsApi, Method.Get)
                 {
                     RequestFormat = DataFormat.Json
                 };
                 client.AddHeader("Content-type", "application/json");
                 client.AddParameter("countryRegion", "BR", ParameterType.QueryString);
                 client.AddParameter("addressLine", address, ParameterType.QueryString);
-                client.AddParameter("key", _configuration["ProjectSettings:LocalizationApiKey"], ParameterType.QueryString);
+                client.AddParameter("key", _settings.LocalizationApiKey, ParameterType.QueryString);
 
                 RestClient _rest = new();
                 var response = await _rest.ExecuteAsync<JObject>(client);

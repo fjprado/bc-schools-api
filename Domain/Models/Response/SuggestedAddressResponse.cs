@@ -1,4 +1,4 @@
-﻿namespace bc_schools_api.Domain.Models
+﻿namespace bc_schools_api.Domain.Models.Response
 {
     public class SuggestedAddressResponse
     {

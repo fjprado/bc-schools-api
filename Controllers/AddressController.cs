@@ -1,4 +1,4 @@
-﻿using bc_schools_api.Domain.Entities;
+﻿using bc_schools_api.Domain.Models.Entities;
 using bc_schools_api.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 

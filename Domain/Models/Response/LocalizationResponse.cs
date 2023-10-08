@@ -1,4 +1,4 @@
-﻿namespace bc_schools_api.Domain.Models
+﻿namespace bc_schools_api.Domain.Models.Response
 {
     public class LocalizationResponse
     {
@@ -17,6 +17,6 @@
 
     public class GeocodePoints
     {
-        public decimal[] Coordinates { get; set; }
+        public double[] Coordinates { get; set; }
     }
 }
