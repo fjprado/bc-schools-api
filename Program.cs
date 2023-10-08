@@ -1,7 +1,14 @@
 using AutoMapper;
 using bc_schools_api.Domain;
+using bc_schools_api.Infra;
+using bc_schools_api.Infra.Interfaces;
+using bc_schools_api.Repository;
 using bc_schools_api.Services;
 using bc_schools_api.Services.Interfaces;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using System.Data;
+using System.Data.Common;
 
 var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
 
@@ -21,8 +28,19 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddSingleton<IConfiguration>(_configuration);
+ISettings settings = new Settings();
+_configuration.GetSection("ProjectSettings").Bind(settings);
+builder.Services.AddScoped(svc => settings);
+
+builder.Services.AddDbContext<DatabaseContext>(x => x.UseSqlServer(settings.SchoolDbConnectionString));
+builder.Services.ConfigureAll<IDbConnection>(options =>
+{
+    options.ConnectionString = settings.SchoolDbConnectionString;
+});
+builder.Services.AddScoped<IDbConnection, DbConnection>(x => new SqlConnection(settings.SchoolDbConnectionString));
+
 builder.Services.AddScoped<IAddressService, AddressService>();
+builder.Services.AddScoped<ISchoolService, SchoolService>();
 
 var mapperConfig = new MapperConfiguration(mc =>
 {
