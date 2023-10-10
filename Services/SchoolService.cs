@@ -10,6 +10,10 @@ using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RestSharp;
+using System.Linq.Expressions;
+using System;
+using bc_schools_api.Domain.Enums;
+using System.Linq;
 
 namespace bc_schools_api.Services
 {
@@ -26,17 +30,17 @@ namespace bc_schools_api.Services
             _dbContext = dbContext;
         }
 
-        public async Task<List<School>> GetSchoolsList(Coordinate originCoordinate, int limitRange)
+        public async Task<List<School>> GetSchoolsList(GetSchoolRequest requestModel)
         {
             try
             {
-                double defaultRangeCoordinate = 0.385;
-                var schoolsDb = _dbContext.School.Where(x => (x.Latitude > (originCoordinate.Latitude - defaultRangeCoordinate) && x.Latitude < (originCoordinate.Latitude + defaultRangeCoordinate))
-                                                        && (x.Longitude > (originCoordinate.Longitude - defaultRangeCoordinate) && x.Longitude < (originCoordinate.Longitude + defaultRangeCoordinate)));
+                var filters = FilteredSchools(requestModel);
 
-                var schools = await GetSchoolsDistance(schoolsDb, originCoordinate);
+                var schoolsDb = _dbContext.School.Where(filters.Compile());
 
-                return schools.Where(s => s.TravelDistance <= (limitRange * 1000)).ToList();
+                var schools = await GetSchoolsDistance(schoolsDb, requestModel);
+
+                return schools.ToList();
             }
             catch (Exception)
             {
@@ -44,15 +48,65 @@ namespace bc_schools_api.Services
             }
         }
 
-        private async Task<IEnumerable<School>> GetSchoolsDistance(IEnumerable<DbSchool> dbSchools, Coordinate originCoordinate)
+        private Expression<Func<DbSchool, bool>> FilteredSchools(GetSchoolRequest requestModel)
+        {
+            var filtersDetails = new List<Expression<Func<DbSchool, bool>>>();
+            double defaultRangeCoordinate = 0.385;
+            Expression<Func<DbSchool, bool>> FilterDefault() => school => (school.Latitude > (requestModel.Coordinate.Latitude - defaultRangeCoordinate) && school.Latitude < (requestModel.Coordinate.Latitude + defaultRangeCoordinate))
+                                                            && (school.Longitude > (requestModel.Coordinate.Longitude - defaultRangeCoordinate) && school.Longitude < (requestModel.Coordinate.Longitude + defaultRangeCoordinate));
+
+            filtersDetails.Add(FilterDefault());
+
+            if (requestModel.Filters.Any())
+            {
+                Expression<Func<DbSchool, bool>> FilterBySchoolType(dynamic[] schoolTypes) => school => schoolTypes.Contains(school.SchoolTypeId);
+                Expression<Func<DbSchool, bool>> FilterBySchoolCategory(dynamic[] schoolCategories) => school => schoolCategories.Contains(school.SchoolCategoryId);
+                Expression<Func<DbSchool, bool>> FilterByGradeRange(dynamic[] gradeRanges) => school => school.GradeRange.Split(",", StringSplitOptions.None).Any(x => gradeRanges.Contains(x));
+                Expression<Func<DbSchool, bool>> FilterByDistrict(dynamic[] districts) => school => districts.Contains(school.DistrictNumber);
+
+                foreach (var item in requestModel.Filters)
+                {
+                    switch (item.FilterType)
+                    {
+                        case FilterEnum.SchoolType:
+                            filtersDetails.Add(FilterBySchoolType(item.FilterValues));
+                            break;
+                        case FilterEnum.SchoolCategory:
+                            filtersDetails.Add(FilterBySchoolCategory(item.FilterValues));
+                            break;
+                        case FilterEnum.GradeRange:
+                            filtersDetails.Add(FilterByGradeRange(item.FilterValues));
+                            break;
+                        case FilterEnum.District:
+                            filtersDetails.Add(FilterByDistrict(item.FilterValues));
+                            break;
+                    }
+                }
+            }
+
+            var parameter = Expression.Parameter(typeof(DbSchool), "school");
+            Expression combinedPredicate = null;
+
+            foreach (var filter in filtersDetails)
+            {
+                if (combinedPredicate == null)
+                    combinedPredicate = filter.Body;
+                else
+                    combinedPredicate = Expression.AndAlso(combinedPredicate, filter.Body);
+            }
+
+            return Expression.Lambda<Func<DbSchool, bool>>(combinedPredicate, parameter);
+        }
+
+        private async Task<IEnumerable<School>> GetSchoolsDistance(IEnumerable<DbSchool> dbSchools, GetSchoolRequest requestModel)
         {
             try
             {
-                var destinationCoordinates = dbSchools.Select(s => new Coordinate() { Latitude = s.Latitude, Longitude = s.Longitude});
+                var destinationCoordinates = dbSchools.Select(s => new Coordinate() { Latitude = s.Latitude, Longitude = s.Longitude });
 
-                if (originCoordinate.Latitude == null || originCoordinate.Longitude == null)
+                if (requestModel.Coordinate.Latitude == null || requestModel.Coordinate.Longitude == null)
                 {
-                    originCoordinate = new Coordinate()
+                    requestModel.Coordinate = new Coordinate()
                     {
                         Latitude = _settings.DefaultLatitude,
                         Longitude = _settings.DefaultLongitude
@@ -61,7 +115,7 @@ namespace bc_schools_api.Services
 
                 var serializedRequest = JsonConvert.SerializeObject(new DistanceRequest()
                 {
-                    Origins = new List<Coordinate>() { originCoordinate },
+                    Origins = new List<Coordinate>() { requestModel.Coordinate },
                     Destinations = destinationCoordinates
                 });
 
@@ -90,6 +144,8 @@ namespace bc_schools_api.Services
                     school.TravelDistance = results?.Where(w => w.DestinationIndex == schools?.IndexOf(school))?.FirstOrDefault()?.TravelDistance ?? 0;
                 }
 
+                schools = FilterDistanceRange(requestModel, schools);
+
                 return schools.OrderBy(o => o.TravelDistance);
             }
             catch (Exception)
@@ -97,5 +153,15 @@ namespace bc_schools_api.Services
                 throw;
             }
         }
-    }
+
+        private static List<School> FilterDistanceRange(GetSchoolRequest requestModel, List<School> schools)
+        {
+            if (requestModel.Filters.Any(x => x.FilterType == FilterEnum.LimitRange))
+            {
+                return schools.Where(s => s.TravelDistance <= (requestModel.Filters.First(x => x.FilterType == FilterEnum.LimitRange).FilterValues[0] * 1000)).ToList();
+            }
+
+            return schools = schools.Where(s => s.TravelDistance <= 30 * 1000).ToList();
+        }
+}
 }
