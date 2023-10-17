@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using bc_schools_api.Services.Interfaces;
 using bc_schools_api.Domain.Models.Entities;
+using bc_schools_api.Domain.Models.Request;
 
 namespace bc_schools_api.Controllers
 {
@@ -21,11 +22,11 @@ namespace bc_schools_api.Controllers
         /// <response code="204">If no content</response>   
         /// <response code="400">If throws an error</response> 
         [HttpPost("GetSchoolsList")]
-        public async Task<ActionResult<IEnumerable<School>>> GetSchoolsList([FromBody] Coordinate originCoordinate, int limitRange = 30)
+        public async Task<ActionResult<IEnumerable<School>>> GetSchoolsList([FromBody] GetSchoolRequest requestModel)
         {
             try
             {
-                var schools = await _schoolService.GetSchoolsList(originCoordinate, limitRange);
+                var schools = await _schoolService.GetSchoolsList(requestModel);
 
                 if (schools.Count == 0)
                     return NoContent();
