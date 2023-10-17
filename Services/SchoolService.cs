@@ -14,6 +14,7 @@ using System.Linq.Expressions;
 using System;
 using bc_schools_api.Domain.Enums;
 using System.Linq;
+using LinqKit;
 
 namespace bc_schools_api.Services
 {
@@ -36,7 +37,7 @@ namespace bc_schools_api.Services
             {
                 var filters = FilteredSchools(requestModel);
 
-                var schoolsDb = _dbContext.School.Where(filters.Compile());
+                var schoolsDb = _dbContext.School.Where(filters);
 
                 var schools = await GetSchoolsDistance(schoolsDb, requestModel);
 
@@ -50,52 +51,31 @@ namespace bc_schools_api.Services
 
         private Expression<Func<DbSchool, bool>> FilteredSchools(GetSchoolRequest requestModel)
         {
-            var filtersDetails = new List<Expression<Func<DbSchool, bool>>>();
             double defaultRangeCoordinate = 0.385;
-            Expression<Func<DbSchool, bool>> FilterDefault() => school => (school.Latitude > (requestModel.Coordinate.Latitude - defaultRangeCoordinate) && school.Latitude < (requestModel.Coordinate.Latitude + defaultRangeCoordinate))
-                                                            && (school.Longitude > (requestModel.Coordinate.Longitude - defaultRangeCoordinate) && school.Longitude < (requestModel.Coordinate.Longitude + defaultRangeCoordinate));
 
-            filtersDetails.Add(FilterDefault());
-
+            var predicate = PredicateBuilder.New<DbSchool>();
+            predicate = predicate.And(school => (school.Latitude > (requestModel.Coordinate.Latitude - defaultRangeCoordinate) && school.Latitude < (requestModel.Coordinate.Latitude + defaultRangeCoordinate))
+                                                            && (school.Longitude > (requestModel.Coordinate.Longitude - defaultRangeCoordinate) && school.Longitude < (requestModel.Coordinate.Longitude + defaultRangeCoordinate)));
             if (requestModel.Filters.Any())
             {
-                Expression<Func<DbSchool, bool>> FilterBySchoolType(dynamic[] schoolTypes) => school => schoolTypes.Contains(school.SchoolTypeId);
-                Expression<Func<DbSchool, bool>> FilterBySchoolCategory(dynamic[] schoolCategories) => school => schoolCategories.Contains(school.SchoolCategoryId);
-                Expression<Func<DbSchool, bool>> FilterByGradeRange(dynamic[] gradeRanges) => school => school.GradeRange.Split(",", StringSplitOptions.None).Any(x => gradeRanges.Contains(x));
-                Expression<Func<DbSchool, bool>> FilterByDistrict(dynamic[] districts) => school => districts.Contains(school.DistrictNumber);
-
                 foreach (var item in requestModel.Filters)
                 {
                     switch (item.FilterType)
                     {
                         case FilterEnum.SchoolType:
-                            filtersDetails.Add(FilterBySchoolType(item.FilterValues));
+                            predicate = predicate.And(school => item.FilterValues.Contains(school.SchoolTypeId));
                             break;
                         case FilterEnum.SchoolCategory:
-                            filtersDetails.Add(FilterBySchoolCategory(item.FilterValues));
-                            break;
-                        case FilterEnum.GradeRange:
-                            filtersDetails.Add(FilterByGradeRange(item.FilterValues));
+                            predicate = predicate.And(school => item.FilterValues.Contains(school.SchoolCategoryId));
                             break;
                         case FilterEnum.District:
-                            filtersDetails.Add(FilterByDistrict(item.FilterValues));
+                            predicate = predicate.And(school => item.FilterValues.Contains(school.DistrictNumber));
                             break;
                     }
                 }
             }
 
-            var parameter = Expression.Parameter(typeof(DbSchool), "school");
-            Expression combinedPredicate = null;
-
-            foreach (var filter in filtersDetails)
-            {
-                if (combinedPredicate == null)
-                    combinedPredicate = filter.Body;
-                else
-                    combinedPredicate = Expression.AndAlso(combinedPredicate, filter.Body);
-            }
-
-            return Expression.Lambda<Func<DbSchool, bool>>(combinedPredicate, parameter);
+            return predicate;
         }
 
         private async Task<IEnumerable<School>> GetSchoolsDistance(IEnumerable<DbSchool> dbSchools, GetSchoolRequest requestModel)
