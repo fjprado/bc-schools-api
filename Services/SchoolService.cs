@@ -37,7 +37,10 @@ namespace bc_schools_api.Services
             {
                 var filters = FilteredSchools(requestModel);
 
-                var schoolsDb = _dbContext.School.Where(filters);
+                var schoolsDb = _dbContext.School
+                        .Include(x => x.SchoolCategory)
+                        .Include(x => x.SchoolType)
+                        .Where(filters);
 
                 var schools = await GetSchoolsDistance(schoolsDb, requestModel);
 
@@ -56,7 +59,7 @@ namespace bc_schools_api.Services
             var predicate = PredicateBuilder.New<DbSchool>();
             predicate = predicate.And(school => (school.Latitude > (requestModel.Coordinate.Latitude - defaultRangeCoordinate) && school.Latitude < (requestModel.Coordinate.Latitude + defaultRangeCoordinate))
                                                             && (school.Longitude > (requestModel.Coordinate.Longitude - defaultRangeCoordinate) && school.Longitude < (requestModel.Coordinate.Longitude + defaultRangeCoordinate)));
-            if (requestModel.Filters.Any())
+            if (requestModel.Filters?.Any() ?? false)
             {
                 foreach (var item in requestModel.Filters)
                 {
@@ -136,12 +139,12 @@ namespace bc_schools_api.Services
 
         private static List<School> FilterDistanceRange(GetSchoolRequest requestModel, List<School> schools)
         {
-            if (requestModel.Filters.Any(x => x.FilterType == FilterEnum.LimitRange))
+            if (requestModel.Filters?.Any(x => x.FilterType == FilterEnum.LimitRange) ?? false)
             {
                 return schools.Where(s => s.TravelDistance <= (requestModel.Filters.First(x => x.FilterType == FilterEnum.LimitRange).FilterValues[0] * 1000)).ToList();
             }
 
-            return schools = schools.Where(s => s.TravelDistance <= 30 * 1000).ToList();
+            return schools = schools.Where(s => s.TravelDistance <= 60 * 1000).ToList();
         }
 }
 }

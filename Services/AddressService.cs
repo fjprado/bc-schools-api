@@ -12,14 +12,12 @@ namespace bc_schools_api.Services
     public class AddressService : IAddressService
     {
         private readonly ISettings _settings;
-        private readonly IMapper _mapper;
-        public AddressService(ISettings settings, IMapper mapper)
+        public AddressService(ISettings settings)
         {
             _settings = settings;
-            _mapper = mapper;
         }
 
-        public async Task<List<OriginAddress>> GetSuggestedAddressList(string address)
+        public async Task<List<string>> GetSuggestedAddressList(string address)
         {
             try
             {
@@ -45,7 +43,7 @@ namespace bc_schools_api.Services
 
                 var suggestedAddress = result.ResourceSets.SelectMany(rs => rs.Resources.SelectMany(r => r.Value.Select(v => v.Address))).ToList();
 
-                return _mapper.Map<List<Address>, List<OriginAddress>>(suggestedAddress);
+                return suggestedAddress.Select(x => x.FormattedAddress).ToList();
             }
             catch (Exception)
             {
