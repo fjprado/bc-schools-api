@@ -28,7 +28,7 @@ namespace bc_schools_api.Controllers
             {
                 var schools = await _schoolService.GetSchoolsList(requestModel);
 
-                if (schools.Count == 0)
+                if (!schools.Any())
                     return NoContent();
 
                 return Ok(schools);
