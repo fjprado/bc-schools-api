@@ -60,7 +60,7 @@ namespace bc_schools_api.Services
                     RequestFormat = DataFormat.Json
                 };
                 client.AddHeader("Content-type", "application/json");
-                client.AddParameter("countryRegion", "BR", ParameterType.QueryString);
+                client.AddParameter("countryRegion", "CA", ParameterType.QueryString);
                 client.AddParameter("addressLine", address, ParameterType.QueryString);
                 client.AddParameter("key", _settings.LocalizationApiKey, ParameterType.QueryString);
 
