@@ -2,6 +2,7 @@
 using bc_schools_api.Services.Interfaces;
 using bc_schools_api.Domain.Models.Entities;
 using bc_schools_api.Domain.Models.Request;
+using OfficeOpenXml;
 
 namespace bc_schools_api.Controllers
 {
@@ -38,5 +39,26 @@ namespace bc_schools_api.Controllers
                 return BadRequest(ex.Message);
             }
         }
+
+        [HttpPost("UpdateSchoolList")]
+        public async Task<ActionResult> UpdateSchoolList(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("File not found");
+            }
+            
+            try
+            {
+                await _schoolService.UpdateSchoolList(file);
+
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
     }
 }

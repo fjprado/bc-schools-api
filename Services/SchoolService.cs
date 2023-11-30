@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using bc_schools_api.Domain.Enums;
 using bc_schools_api.Domain.Models.Entities;
 using bc_schools_api.Domain.Models.Request;
 using bc_schools_api.Domain.Models.Response;
@@ -6,15 +7,14 @@ using bc_schools_api.Infra.Interfaces;
 using bc_schools_api.Repository;
 using bc_schools_api.Repository.DatabaseModels;
 using bc_schools_api.Services.Interfaces;
+using LinqKit;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using OfficeOpenXml;
 using RestSharp;
 using System.Linq.Expressions;
-using System;
-using bc_schools_api.Domain.Enums;
-using System.Linq;
-using LinqKit;
+using System.Text;
 
 namespace bc_schools_api.Services
 {
@@ -23,12 +23,14 @@ namespace bc_schools_api.Services
         private readonly ISettings _settings;
         private readonly IMapper _mapper;
         private readonly DatabaseContext _dbContext;
+        private readonly IAddressService _addressService;
 
-        public SchoolService(ISettings settings, IMapper mapper, DatabaseContext dbContext)
+        public SchoolService(ISettings settings, IMapper mapper, DatabaseContext dbContext, IAddressService addressService)
         {
             _settings = settings;
             _mapper = mapper;
             _dbContext = dbContext;
+            _addressService = addressService;
         }
 
         public async Task<List<School>> GetSchoolsList(GetSchoolRequest requestModel)
@@ -146,5 +148,150 @@ namespace bc_schools_api.Services
 
             return schools = schools.Where(s => s.TravelDistance <= 60 * 1000).ToList();
         }
+
+        public async Task UpdateSchoolList(IFormFile file)
+        {
+            var worksheetData = await GetWorksheetData(file);
+            if (!worksheetData?.Any() ?? true)
+            {
+                return;
+            }
+
+            var (districts, schoolCategories, schoolTypes) = GetUtilData();
+
+            for (int pointer = 0; pointer < worksheetData?.Count(); pointer += 100)
+            {
+                var data = worksheetData.Skip(pointer).Take(100);
+                //var schoolsToInsert = GetSchoolsToInsert(data);
+                var schoolsToInsert = data.ToList();
+
+                if (!schoolsToInsert?.Any() ?? true)
+                    continue;
+
+                var isDataUpdated = InsertMissingUtilData(districts, schoolCategories, schoolTypes, schoolsToInsert);
+
+                if (isDataUpdated)
+                {
+                    var result = GetUtilData();
+                    districts = result.districts;
+                    schoolCategories = result.schoolCategories;
+                    schoolTypes = result.schoolTypes;
+                }
+
+                var dataMapped = schoolsToInsert.Select(x =>
+                    new DbSchool()
+                    {
+                        Address = x.GetValueOrDefault("Address") ?? "",
+                        City = x.GetValueOrDefault("City") ?? "",
+                        Code = x.GetValueOrDefault("School Code") ?? "",
+                        DistrictNumber = int.Parse(x.GetValueOrDefault("District Number") ?? "0"),
+                        Fax = x.GetValueOrDefault("Fax") ?? "",
+                        GradeRange = x.GetValueOrDefault("Grade Range") ?? "",
+                        Latitude = double.Parse(x.GetValueOrDefault("Latitude") ?? "0"),
+                        Longitude = double.Parse(x.GetValueOrDefault("Longitude") ?? "0"),
+                        Name = x.GetValueOrDefault("School Name") ?? "",
+                        Phone = x.GetValueOrDefault("Phone") ?? "",
+                        PostalCode = x.GetValueOrDefault("Postal Code") ?? "",
+                        Province = x.GetValueOrDefault("Province") ?? "",
+                        SchoolCategoryId = schoolCategories.First(cat => cat.Description == (x.GetValueOrDefault("School Category") ?? "")).Id,
+                        SchoolTypeId = schoolTypes.First(type => type.Description == (x.GetValueOrDefault("Type") ?? "")).Id,
+                    });
+
+                _dbContext.School.AddRange(dataMapped);
+                _dbContext.SaveChanges();
+            }
+        }
+
+        private IEnumerable<Dictionary<string, string>> GetSchoolsToInsert(IEnumerable<Dictionary<string, string>> data)
+        {
+            var schoolsCodesToInsert = data.Select(x => x["School Code"]).Except(_dbContext.School.Select(entity => entity.Code));
+            return data.Where(x => schoolsCodesToInsert.Any(y => y == x["School Code"]));
+        }
+
+        private bool InsertMissingUtilData(List<DbDistrict> districts, List<DbSchoolCategory> schoolCategories, List<DbSchoolType> schoolTypes, List<Dictionary<string, string>> dataToInsert)
+        {
+            bool dataUpdated = false;
+            var districtsNotFound = dataToInsert.Select(x => new { DistrictNumber = int.Parse(x["District Number"]), DistrictName = x["District Name"] }).Where(dist => districts.All(y => y.Number != dist.DistrictNumber));
+            if (districtsNotFound.Any())
+            {
+                _dbContext.District.AddRange(districtsNotFound.Select(x => new DbDistrict() { Number = x.DistrictNumber, Name = x.DistrictName }));
+                dataUpdated = true;
+            }
+
+            var schoolCategoriesNotFound = dataToInsert.Select(x => x["School Category"]).Where(cat => schoolCategories.All(y => y.Description != cat));
+            if (schoolCategoriesNotFound.Any())
+            {
+                _dbContext.SchoolCategory.AddRange(schoolCategoriesNotFound.Select(category => new DbSchoolCategory() { Description = category }));
+                dataUpdated = true;
+            }
+
+            var schoolTypesNotFound = dataToInsert.Select(x => x["Type"]).Where(type => schoolTypes.All(y => y.Description != type));
+            if (schoolTypesNotFound.Any())
+            {
+                _dbContext.SchoolType.AddRange(schoolTypesNotFound.Select(type => new DbSchoolType() { Description = type }));
+                dataUpdated = true;
+            }
+
+            _dbContext.SaveChanges();
+
+            var modifiedData = dataToInsert.Select(x =>
+            {
+                var coordinate = _addressService.GetAddressCoordinate($"{x["Address"]}, {x["City"]}").Result;
+                x.Add("Latitude", coordinate.Latitude.ToString());
+                x.Add("Longitude", coordinate.Longitude.ToString());
+                return x;
+            }).ToList();
+
+            dataToInsert.Clear();
+            dataToInsert.AddRange(modifiedData);
+
+            return dataUpdated;
+        }
+
+        private (List<DbDistrict> districts, List<DbSchoolCategory> schoolCategories, List<DbSchoolType> schoolTypes) GetUtilData()
+        {
+            var districts = _dbContext.District.ToList();
+            var schoolCategories = _dbContext.SchoolCategory.ToList();
+            var schoolTypes = _dbContext.SchoolType.ToList();
+
+            return (districts, schoolCategories, schoolTypes);
+        }
+
+        private async Task<IEnumerable<Dictionary<string, string>>> GetWorksheetData(IFormFile file)
+        {
+            using (var memoryStream = new MemoryStream())
+            {
+                await file.CopyToAsync(memoryStream).ConfigureAwait(false);
+                ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+                using (var package = new ExcelPackage(memoryStream))
+                {
+                    var worksheet = package.Workbook.Worksheets[0];
+                    var rowCount = worksheet.Dimension?.Rows;
+                    var colCount = worksheet.Dimension?.Columns;
+
+                    var sb = new StringBuilder();
+                    for (int row = 1; row <= rowCount.Value; row++)
+                    {
+                        for (int col = 1; col <= colCount.Value; col++)
+                        {
+                            sb.AppendFormat("{0}\t", worksheet.Cells[row, col].Value);
+                        }
+                        sb.Append(Environment.NewLine);
+                    }
+
+                    var arr = sb.ToString().Trim().Split("\r\n").Select(row =>
+                    {
+                        return row.Split("\t");
+                    });
+
+                    var headers = arr.First();
+
+                    return arr.Skip(1)
+                              .Select(row => headers.Zip(row, (header, cell) => new { Header = header, Cell = cell })
+                              .ToDictionary(pair => pair.Header, pair => pair.Cell.Trim()));
+                }
+            }
+        }
+    }
 }
-}
+
