@@ -40,7 +40,10 @@ ISettings settings = new Settings();
 _configuration.Bind(settings);
 builder.Services.AddScoped(svc => settings);
 
-builder.Services.AddDbContext<DatabaseContext>(x => x.UseSqlServer(settings.SchoolDbConnectionString));
+builder.Services.AddDbContext<DatabaseContext>(x =>
+    x.UseSqlServer(settings.SchoolDbConnectionString,
+    options => options.EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(15), errorNumbersToAdd: null)));
+    
 builder.Services.ConfigureAll<IDbConnection>(options =>
 {
     options.ConnectionString = settings.SchoolDbConnectionString;
