@@ -37,7 +37,7 @@ builder.Services.AddCors(options =>
 });
 
 ISettings settings = new Settings();
-_configuration.GetSection("ProjectSettings").Bind(settings);
+_configuration.Bind(settings);
 builder.Services.AddScoped(svc => settings);
 
 builder.Services.AddDbContext<DatabaseContext>(x => x.UseSqlServer(settings.SchoolDbConnectionString));
